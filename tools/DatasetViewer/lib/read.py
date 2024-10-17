@@ -150,7 +150,7 @@ def load_calib_data(path_total_dataset, name_camera_calib, tf_tree, velodyne_nam
     Tr_cam = np.asarray([T_cam['translation']['x'], T_cam['translation']['y'], T_cam['translation']['z']])
     Tr_velodyne = np.asarray(
         [T_velodyne['translation']['x'], T_velodyne['translation']['y'], T_velodyne['translation']['z']])
-    Tr_radar = np.asarray([T_radar['translation']['x'], T_radar['translation']['y'], T_radar['translation']['z']])
+    #Tr_radar = np.asarray([T_radar['translation']['x'], T_radar['translation']['y'], T_radar['translation']['z']])
 
     # Setup Translation Matrix camera to lidar -> ROS spans transformation from its children to its parents
     # Therefore one inversion step is needed for zero_to_camera -> <parent_child>
@@ -164,13 +164,14 @@ def load_calib_data(path_total_dataset, name_camera_calib, tf_tree, velodyne_nam
     zero_to_velodyne[0:3, 3] = Tr_velodyne
     zero_to_velodyne = np.vstack((zero_to_velodyne, np.array([0, 0, 0, 1])))
 
-    zero_to_radar = zero_to_velodyne.copy()
-    zero_to_radar[0:3, 3] = Tr_radar
+    #zero_to_radar = zero_to_velodyne.copy()
+    #zero_to_radar[0:3, 3] = Tr_radar
 
     # Calculate total extrinsic transformation to camera
     velodyne_to_camera = np.matmul(np.linalg.inv(zero_to_camera), zero_to_velodyne)
     camera_to_velodyne = np.matmul(np.linalg.inv(zero_to_velodyne), zero_to_camera)
-    radar_to_camera = np.matmul(np.linalg.inv(zero_to_camera), zero_to_radar)
+    #radar_to_camera = np.matmul(np.linalg.inv(zero_to_camera), zero_to_radar)
+    radar_to_camera = camera_to_velodyne
 
     # Read projection matrix P and camera rectification matrix R
     P = np.reshape(data_camera['P'], [3, 4])
