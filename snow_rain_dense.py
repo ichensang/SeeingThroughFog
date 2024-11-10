@@ -17,8 +17,8 @@ def find_image_by_name(options,filename):
 
 
 def metric_compute(testimg, gtimg):
-    croptest = testimg[520:770,:].flatten()
-    cropgt = gtimg[520:770,:].flatten()
+    croptest = testimg[600:810,:].flatten()
+    cropgt = gtimg[600:810,:].flatten()
     intersection = np.sum(croptest*cropgt)
     union = np.sum(croptest) + np.sum(cropgt) - intersection
     iou = intersection/union
@@ -122,39 +122,6 @@ def find_missing_points(last, strongest):
     return remaining_last, remaining_strong
 
 
-def find_closest_neighbors(x, reference):
-    """
-    This function allows you to match strongest and last echos and reason about scattering distributions.
-
-    :param x: Pointcloud which should be matched
-    :param reference: Reference Pointcloud
-    :return: returns valid matching indexes
-    """
-    tree = scipy.spatial.KDTree(reference[:, 1:4])
-    distances, indexes = tree.query(x[:, 1:4], p=2)
-    print('indexes', indexes)
-    print('found matches', len(indexes), len(set(indexes)))
-    # return 0
-    valid = []
-    # not matching contains all not explainable scattered mismatching particles
-    not_matching = []
-    for idx, i in enumerate(indexes):
-
-        delta = reference[i, :] - x[idx, :]
-        # Laser Ring has to match
-        if delta[-1] == 0:
-
-            # Follows assumption that strongest echo has higher intensity than last and that the range is more distant
-            # for the last return. The sensor can report 2 strongest echo if strongest and last echo are matching.
-            # Here those points are not being matched.
-            if delta[-2] < 0 and delta[0] > 0:
-                valid.append((i, idx))
-            else:
-                not_matching.append((i, idx))
-        else:
-            not_matching.append((i, idx))
-
-    return valid
 
 def py_func_project_3D_to_2D(points_3D, P):
     # Project on image
@@ -170,9 +137,10 @@ def py_func_project_3D_to_2D(points_3D, P):
 
 root = 'dataset/'
 lidar_type = 'lidar_hdl64'
-photo_root = 'dataset/rainy/image'
+#photo_root = 'dataset/rainy/image'
+photo_root = 'dataset/snowy/street_snow_cover'
 
-ground_truth = ET.parse('rainy_label.xml')
+ground_truth = ET.parse('snow_street.xml')
 root_gt = ground_truth.getroot()
 image_elem = root_gt.findall('.//image')
 total_iou = 0.0
@@ -204,15 +172,15 @@ echos = [
 ]
 
 #CAMERA DEFAULTS===========================================================================
-cannythreshold = 40
+cannythreshold = 20 #20snow 50rain
 cannycontrol = 0
 left_corner = 0
 right_corner = 1920
-default_rho_l = -50
-default_rho_r = 800
+default_rho_l = -150
+default_rho_r = 1000
 default_theta_l = -1.25
 default_theta_r = 0.96
-draw_line_number = 50
+draw_line_number = 100
 
 #LIDAR DEFAULTS===========================================================================
 left_range = 30
@@ -233,9 +201,12 @@ rainbow = [
 ]
 
 for sample in weather_samples:
+    print('filename = ', sample)
     #image_filename = os.path.join(root, 'cam_stereo_left_lut', interesting_sample + '.png')
-    image_filename = os.path.join(root, 'rainy', 'image', sample)
-    #image_filename = 'dataset/rainy/image/2019-01-09_09-18-07_00000.png'
+    #image_filename = os.path.join(root, 'rainy', 'image', sample)
+    image_filename = os.path.join(root, 'snowy', 'street_snow_cover', sample)
+    #image_filename = os.path.join(root, 'snowy', 'highway', sample)
+    #image_filename = 'dataset/rainy/image/2019-05-02_20-17-41_00510.png'
     #velo_file_last = os.path.join(root, lidar_type + '_' + echos[0][0],
     #                              interesting_sample + '.bin')
     #velo_file_strongest = os.path.join(root, lidar_type + '_' + echos[0][1],
@@ -253,121 +224,129 @@ for sample in weather_samples:
     #lidar_data_strongest = lidar_data_strongest[:,0:4]
     lidar_data_strongest = load_velodyne_scan(lidar_filename)
     lidar_data_strongest = lidar_data_strongest[:, 0:4]
-
+    #cannythreshold = 5
     #CAMERA=============================================================================================================
-    cannythreshold = cannythreshold + cannycontrol
-    # cannythreshold = 21
-    print("canny threshold = ", cannythreshold)
-    x_intercept = IMG_W / 2
-    y_intercept = IMG_H / 2.1
-    out = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    filtered = cv2.bilateralFilter(out, 15, 50, 50)
-    high = cannythreshold
-    low = high / 3
-    edge = cv2.Canny(filtered, low, high, None, 3)
-    edge = np.uint8(edge)
+    for j in range(1):
+        cannythreshold = cannythreshold + cannycontrol
+        #cannythreshold = 30
+        print("canny threshold = ", cannythreshold)
+        x_intercept = IMG_W / 2
+        y_intercept = IMG_H / 2.1
+        out = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        filtered = cv2.bilateralFilter(out, 15, 50, 50)
+        high = cannythreshold
+        low = high / 3
+        edge = cv2.Canny(filtered, low, high, None, 3)
+        edge = np.uint8(edge)
 
-    roi_h = x_intercept
-    roi_v = y_intercept
-    # myROI = np.array([[(roi_h, roi_v-30), (0, IMG_H-320), (IMG_W-1, IMG_H-320)]], dtype = np.int32)
-    myROI = np.array([[(roi_h - 270, roi_v + 80), (roi_h + 270, roi_v + 80), (right_corner + 800, IMG_H-100),
-                       (left_corner, IMG_H-100)]], dtype=np.int32)
-    mask = np.zeros_like(edge)
-    region = cv2.fillPoly(mask, myROI, 255)
-    roi = cv2.bitwise_and(edge, region)
+        roi_h = x_intercept
+        roi_v = y_intercept
+        # myROI = np.array([[(roi_h, roi_v-30), (0, IMG_H-320), (IMG_W-1, IMG_H-320)]], dtype = np.int32)
+        myROI = np.array([[(roi_h - 270, roi_v + 80), (roi_h + 270, roi_v + 80), (right_corner + 800, IMG_H-100),
+                           (left_corner, IMG_H-100)]], dtype=np.int32)
+        mask = np.zeros_like(edge)
+        region = cv2.fillPoly(mask, myROI, 255)
+        roi = cv2.bitwise_and(edge, region)
 
-    #cv2.imshow('roi', roi)
-    #cv2.imshow('roi', roi3)
-    #cv2.waitKey(0)
+        #filter_show = filtered[::2,::2]
+        #cv2.imshow('edge', filter_show)
+        #cv2.imshow('roi', roi3)
+        #cv2.waitKey(10)
 
-    line_image = np.zeros((IMG_H, IMG_W, 3), np.uint8)
-    lines = cv2.HoughLines(roi, 1, np.pi / 180, 3, None, 0, 0)
-    rhoall = lines[:, :, 0]
-    thetaall = lines[:, :, 1]
-    totalinesall = len(rhoall) * 2
-    print(totalinesall)
-    cannycontrol = fuzzy_canny(totalinesall)
+        line_image = np.zeros((IMG_H, IMG_W, 3), np.uint8)
+        lines = cv2.HoughLines(roi, 1, np.pi / 180, 3, None, 0, 0)
 
-    if lines is not None:
-        if draw_line_number > 100: ## downsize original 200
-            draw_line_number = 100 ##downsize original 200
-        if draw_line_number < 25: ## downsize original 50
-            draw_line_number = 25 ##down size original 50
-        left = []
-        leftrho = []
-        right = []
-        rightrho = []
-        for i in (range(draw_line_number)):
-            if (len(right)==3) and (len(left)==3):
-                break
-            rho = lines[i][0][0]
-            theta = lines[i][0][1]
-            if theta > 1.5708:
-                theta = theta-3.14159
-                rho = -rho
-            thetad = theta/3.14159*180
-            if (thetad<80) & (thetad>20) & (len(right)<3) & (rho>500) & (rho<1200): #55->20
-                right.append(theta)
-                rightrho.append(rho)
-                    #print(rho)
-                    #print(thetad)
-            if (thetad<0) & (thetad>-80) & (len(left)<3) & (rho>-200) & (rho<1200): #50->10 80->90
-                left.append(theta)
-                leftrho.append(rho)
-        if len(left) == 0:
-            print('None Left')
-            averageleft = float(default_theta_l)
-            rholeftmean = float(default_rho_l)
-            #print(rholeftmean)
-            draw_line_number = draw_line_number + 5  ##down size original 10
+
+        if lines is not None:
+            rhoall = lines[:, :, 0]
+            thetaall = lines[:, :, 1]
+            totalinesall = len(rhoall) * 2
+            if totalinesall > 70000:
+                totalinesall = 70000
+            print(totalinesall)
+            cannycontrol = fuzzy_canny(totalinesall)
+            if draw_line_number > 200: ## downsize original 200
+                draw_line_number = 200 ##downsize original 200
+            if draw_line_number < 25: ## downsize original 50
+                draw_line_number = 25 ##down size original 50
+            #print('draw line number = ', draw_line_number)
+            draw_line_number = 200
+            left = []
+            leftrho = []
+            right = []
+            rightrho = []
+            for i in (range(draw_line_number)):
+                if (len(right)==3) and (len(left)==3):
+                    break
+                rho = lines[i][0][0]
+                theta = lines[i][0][1]
+                if theta > 1.5708:
+                    theta = theta-3.14159
+                    rho = -rho
+                thetad = theta/3.14159*180
+                if (thetad<80) & (thetad>20) & (len(right)<3) & (rho>500) & (rho<1200): #55->20
+                    right.append(theta)
+                    rightrho.append(rho)
+                        #print(rho)
+                        #print(thetad)
+                if (thetad<0) & (thetad>-80) & (len(left)<3) & (rho>-450) & (rho<1200): #50->10 80->90
+                    left.append(theta)
+                    leftrho.append(rho)
+            if len(left) == 0:
+                print('None Left')
+                averageleft = float(default_theta_l)
+                rholeftmean = float(default_rho_l)
+                #print(rholeftmean)
+                draw_line_number = draw_line_number + 20  ##down size original 10
+            else:
+                averageleft = np.average(left)
+                rholeftmean = np.average(leftrho)
+                #default_theta_l = averageleft
+                #default_rho_l = rholeftmean
+            if len(right) == 0:
+                print('None right')
+                averageright = float(default_theta_r)
+                rhorightmean = float(default_rho_r)
+                draw_line_number = draw_line_number + 20  ##down size original 10
+            else:
+                averageright = np.average(right)
+                rhorightmean = np.average(rightrho)
+                #default_theta_r = averageright
+                #default_rho_r = rhorightmean
+            if (len(right) != 0) & (len(left) != 0):
+                draw_line_number = draw_line_number - 10
+
+            #averageleft = -70/180*3.14159
+            #rholeftmean = -200
+            cl = np.cos(averageleft)
+            sl = np.sin(averageleft)
+            x0l = cl * rholeftmean
+            y0l = sl * rholeftmean
+            pt1l = ((round((rholeftmean - IMG_H * sl) / cl)), IMG_H)
+            pt2l = ((round((rholeftmean - 0.5 * IMG_H * sl) / cl)), round(0.5 * IMG_H))
+            cv2.line(line_image, pt1l, pt2l, (0, 255, 255), 2)  ### down size original 13
+            #cv2.line(roi, pt1l, pt2l, (0, 255, 255), 2)
+
+            #averageright = 50/180*2.14159
+            #rhorightmean = 1100
+            cr = np.cos(averageright)
+            sr = np.sin(averageright)
+            x0r = cr * rhorightmean
+            y0r = sr * rhorightmean
+            pt1r = ((round((rhorightmean - IMG_H * sr) / cr)), IMG_H)
+            pt2r = ((round((rhorightmean - 0.5 * IMG_H * sr) / cr)), round(0.5 * IMG_H))
+            cv2.line(line_image, pt1r, pt2r, (0, 255, 255), 2)
+            #cv2.line(roi, pt1r, pt2r, (0, 255, 255), 2)
+            y_intercept = round((rhorightmean - rholeftmean * cr / cl) / (sr - sl * cr / cl))
         else:
-            averageleft = np.average(left)
-            rholeftmean = np.average(leftrho)
-            #default_theta_l = averageleft
-            #default_rho_l = rholeftmean
-        if len(right) == 0:
-            print('None right')
-            averageright = float(default_theta_r)
-            rhorightmean = float(default_rho_r)
-            draw_line_number = draw_line_number + 5  ##down size original 10
-        else:
-            averageright = np.average(right)
-            rhorightmean = np.average(rightrho)
-            #default_theta_r = averageright
-            #default_rho_r = rhorightmean
-        if (len(right) != 0) & (len(left) != 0):
-            draw_line_number = draw_line_number - 10
-
-        #averageleft = -30/180*3.14159
-        #rholeftmean = 1000
-        cl = np.cos(averageleft)
-        sl = np.sin(averageleft)
-        x0l = cl * rholeftmean
-        y0l = sl * rholeftmean
-        pt1l = ((round((rholeftmean - IMG_H * sl) / cl)), IMG_H)
-        pt2l = ((round((rholeftmean - 0.5 * IMG_H * sl) / cl)), round(0.5 * IMG_H))
-        cv2.line(line_image, pt1l, pt2l, (0, 255, 255), 2)  ### down size original 13
-        #cv2.line(roi, pt1l, pt2l, (0, 255, 255), 2)
-
-        cr = np.cos(averageright)
-        sr = np.sin(averageright)
-        x0r = cr * rhorightmean
-        y0r = sr * rhorightmean
-        pt1r = ((round((rhorightmean - IMG_H * sr) / cr)), IMG_H)
-        pt2r = ((round((rhorightmean - 0.5 * IMG_H * sr) / cr)), round(0.5 * IMG_H))
-        cv2.line(line_image, pt1r, pt2r, (0, 255, 255), 2)
-        #cv2.line(roi, pt1r, pt2r, (0, 255, 255), 2)
-        y_intercept = round((rhorightmean - rholeftmean * cr / cl) / (sr - sl * cr / cl))
-    else:
-        print("No line")
-    #color_edge = np.dstack((result, result, result))
-    color_edge = np.dstack((roi,roi,roi))
-    #combo = cv2.addWeighted(img, 0.8, line_image, 1, 0)
-    combo = cv2.addWeighted(color_edge, 0.8, line_image, 1, 0)
-    comboresize = combo[::2,::2] ## down size
-    #comboresize = combo
-    cv2.imshow("Combo", comboresize)
-    cv2.waitKey(10)
+            print("No line")
+        #color_edge = np.dstack((result, result, result))
+        color_edge = np.dstack((roi,roi,roi))
+        color_edge_show = color_edge[::2,::2]
+        combo = cv2.addWeighted(color_edge, 0.8, line_image, 1, 0)
+        comboresize = combo[::2,::2] ## down size
+        cv2.imshow("Combo", comboresize)
+        cv2.waitKey(10)
 
     #LIDAR==============================================================================================================
     #data 3d matrix construction
@@ -397,20 +376,22 @@ for sample in weather_samples:
     lidar_delete_back3 = lidar_delete_back[:,coordinates_2d] #3d coordinates with range
 
     #calculate grid  map
-    gridmap = np.zeros((gridmap_y, gridmap_x), dtype=np.int16)
+    gridmap = np.zeros((gridmap_y, gridmap_x), dtype=float)
     lowest = np.zeros((gridmap_y, gridmap_x), dtype=np.int16)
     grid_coords = np.zeros((2, lidar_delete_back3.shape[1]), dtype=np.int16)
     new_test_map = np.zeros((IMG_H, IMG_W), dtype=np.uint8)
     grid_coords[0, :] = gridmap_y - np.int16(np.floor(lidar_delete_back3[2, :] / grid_size)) - 1  # y
     grid_coords[1, :] = np.int16(np.floor((lidar_delete_back3[0, :] + right_range) / grid_size))  # x
     np.add.at(gridmap, (grid_coords[0, :], grid_coords[1, :]), 1)
-
+    for i in range(gridmap_y):
+        for j in range(gridmap_x):
+            gridmap[i,j] = gridmap[i,j]*((40-0.5*i)*(40-0.5*i)+(j-gridmap_x/2)*(j-gridmap_x/2)*0.25)/2500*5
 
     for i in range(grid_coords.shape[1]):
         par = gridmap[grid_coords[0, i], grid_coords[1, i]]
         #par = 10
         done = [img_coordinates[i, 0], img_coordinates[i, 1]]
-        if par > 27:
+        if par > 8: #27
             colour = 2 #yellow points
             new_test_map[int(done[1]), int(done[0])] = 1
         else:
@@ -423,12 +404,12 @@ for sample in weather_samples:
     filter_n = np.ones((1, 25))
     convoluted = convolve2d(new_test_map, filter_n)
     for i in range(IMG_W):
-        column = convoluted[550:850, i]
+        column = convoluted[600:810, i] ##550 850 change
         non_zero_indices = np.nonzero(column)[0]
         if len(non_zero_indices) <= 3:
             continue
-        edge_map_lidar2[0, i] = 550
-        edge_map_lidar2[1, i] = non_zero_indices[-1] + 550
+        edge_map_lidar2[0, i] = 600 ##change
+        edge_map_lidar2[1, i] = non_zero_indices[-1] + 600 ##change
 
     for i in range(IMG_W):
         cv2.line(img, (i, edge_map_lidar2[0, i]), (i, edge_map_lidar2[1, i]), [0, 127, 255], thickness=1)
@@ -451,25 +432,26 @@ for sample in weather_samples:
 
     filtered_lidar = np.zeros((IMG_H, IMG_W), dtype=float)
     filter_1d = np.ones((1, 11)) / (12 * 100)
-    subarray = lidar_drivable[550:, :]  # 1->2
-    filtered_lidar[550:, :] = convolve2d(subarray, filter_1d, mode='same')
+    subarray = lidar_drivable[600:, :]  ## change
+    #filtered_lidar[600:, :] = convolve2d(subarray, filter_1d, mode='same') ##change
+    filtered_lidar[600:, :] = subarray/100
     #plt.imshow(filtered_lidar)
     #plt.show()
 
     #top_right = (rholeftmean - 550 * sl) / cl
     top = (rholeftmean - y_intercept*sl) / cl
-    bottom_right = (rholeftmean - 799 * sl) / cl
+    bottom_right = (rholeftmean - 809 * sl) / cl ##change
     #top_left = (rhorightmean - 550 * sr) / cr
-    bottom_left = (rhorightmean - 799 * sr) / cr
+    bottom_left = (rhorightmean - 809 * sr) / cr ##change
     #vertices = np.array([[top_left, 550], [top_right, 550], [bottom_right, 799], [bottom_left, 799]], dtype=np.int32)
-    vertices = np.array([[top, y_intercept], [bottom_right, 799], [bottom_left, 799]], dtype=np.int32)
+    vertices = np.array([[top, y_intercept], [bottom_right, 809], [bottom_left, 809]], dtype=np.int32) ##change
     vertices = vertices.reshape((1, -1, 2))
     cv2.fillPoly(camera_drivable, [vertices], 100)
 
     original_image2 = cv2.imread(image_filename)
-    distance_map[:550, :] = 40
+    distance_map[:600, :] = 40 ##change
     rows, cols = np.indices(distance_map.shape)
-    mask = rows >= 550
+    mask = rows >= 600 ##change
     distance_map[mask] = (IMG_H - rows[mask]) / 1000 * 40
     yes_indices = np.logical_and(lidar_drivable == 100, camera_drivable == 100)  # 1->2
     no_indices = np.logical_and(lidar_drivable != 100, camera_drivable == 100)  # 1->2
@@ -481,12 +463,14 @@ for sample in weather_samples:
     drivable_thd = 0.3  # tunable here
     test_result = np.zeros((IMG_H, IMG_W), dtype=np.int64)
     test_result[fusion_drivable > drivable_thd] = 1
+    #test_result[(lidar_drivable == 100) & (camera_drivable ==100)] = 1
 
     #Fusion display before ground truth
     '''
     for i in range(550, 900):
         for j in range(IMG_W):
             if 0.3 < fusion_drivable[i, j] < 0.75:
+            #if camera_drivable[i,j] == 100:
                 color_depth = [255, 0, 0] #blue
                 cv2.circle(original_image2, (j, i), 0, color_depth, thickness=2, lineType=8, shift=0)
             elif fusion_drivable[i, j] >= 0.75:
@@ -498,6 +482,7 @@ for sample in weather_samples:
     cv2.waitKey(10)
     '''
     #==============Test===========================================
+
     image_element = find_image_by_name(image_elem,sample)
     mask = image_element.find('.//mask')
     label = mask.attrib['label']
@@ -520,7 +505,7 @@ for sample in weather_samples:
 
     gt_bitmap[gt_top:gt_top + mask_height, gt_left:gt_left + mask_width] = final_mask
 
-    for i in range(520, 770):
+    for i in range(600, 810): ##change
         for j in range(IMG_W):
             if test_result[i, j] == 1:
                 if gt_bitmap[i, j] == 1:
@@ -544,8 +529,8 @@ for sample in weather_samples:
     iou, f1 = metric_compute(test_result, gt_bitmap)
     print("iou = ", iou)
     print("f1 = ", f1)
-    iou += total_iou
-    f1 += total_f1
+    total_iou += iou
+    total_f1 += f1
 
     cv2.waitKey(0)
 
@@ -555,4 +540,4 @@ average_f1 = total_f1 / frame_cnt
 print('average iou = ', average_iou)
 print('average f1 = ', average_f1)
 
-cv2.waitKey(0)
+cv2.waitKey(10)
